@@ -6,3 +6,6 @@
 !*.md
 !.gitignore
 !requirements.txt
+
+# Strict Blacklist
+secrets.json
