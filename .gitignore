@@ -5,4 +5,4 @@
 !*.py
 !*.md
 !.gitignore
-requirements.txt
+!requirements.txt
