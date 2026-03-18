@@ -25,7 +25,7 @@ Cloudinary/
     └── productVideos/
         ├── product5_0.mov
         └── product5_1.mov
-
+```
 The script uploads every sibling folder recursively.
 
 ```
