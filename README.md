@@ -1,152 +1,162 @@
 # Cloudinary Bulk Upload Script
 
-This script uploads all folders located in the same directory into Cloudinary, preserving the folder structure.
+This script uploads all folders located in the same directory into Cloudinary, preserving the local folder structure.
 
----
+## Example Folder Structure
 
-## Folder Structure
-
-Place the script in a root folder like this:
-
-```
+```text
 Cloudinary/
 ├── uploadCloudinary.py
+├── requirements.txt
+├── secrets.json
 ├── product1/
+│   ├── product1_0.jpg
+│   ├── product1_1.jpg
+│   └── product1_2.jpg
 ├── product2/
-├── product5/
+│   ├── product2_0.jpg
+│   ├── product2_1.jpg
+│   └── product2_2.jpg
+└── product5/
+    ├── productImages/
+    │   ├── product5_0.jpg
+    │   ├── product5_1.jpg
+    │   └── product5_2.jpg
+    └── productVideos/
+        ├── product5_0.mov
+        └── product5_1.mov
+
+The script uploads every sibling folder recursively.
+
+```
+pip install -r requirements.txt
 ```
 
-Each folder (e.g. `product1`, `product5/productImages`) will be uploaded recursively.
+## Credentials
 
----
+The script loads credentials in this order:
 
-## Requirements
+CLOUDINARY_URL environment variable
 
-Install dependencies:
+secrets.json in the same folder as uploadCloudinary.py
 
-```bash
-pip install cloudinary requests
+Option 1: secrets.json
+
+Create a secrets.json file beside the script:
+```
+{
+  "cloud_name": "your_cloud_name",
+  "api_key": "your_api_key",
+  "api_secret": "your_api_secret",
+  "upload_prefix": "https://api.cloudinary.com"
+}
 ```
 
----
+Notes:
+```
+upload_prefix is optional if you use the default US endpoint.
 
-## Setup Credentials
+For EU, use: https://api-eu.cloudinary.com
 
-Set your Cloudinary credentials using an environment variable.
-
-### Windows (PowerShell)
-
-```powershell
-$env:CLOUDINARY_URL="cloudinary://<api_key>:<api_secret>@<cloud_name>"
+For AP, use: https://api-ap.cloudinary.com
 ```
 
-### macOS / Linux
-
-```bash
-export CLOUDINARY_URL="cloudinary://<api_key>:<api_secret>@<cloud_name>"
+Upload all folders to Cloudinary root:
 ```
-
----
-
-## Basic Usage
-
-Run the script from the root folder:
-
-```bash
 python uploadCloudinary.py
 ```
 
-This uploads all folders into the **Cloudinary root directory**.
-
----
-
-## Upload to Specific Cloudinary Folder
-
-```bash
-python uploadCloudinary.py --to Folder1
+Upload Into a Specific Existing Cloudinary Root Folder
+```
+python uploadCloudinary.py --to KontrolFreek
 ```
 
-* If the folder exists → files are uploaded into it
-* If not → files are uploaded to root
+Behavior:
+ - If the folder exists in Cloudinary root, uploads go inside it.
+ - If it does not exist, the script falls back to Cloudinary root.
 
----
-
-## Dry Run (Recommended First)
-
-Preview what will be uploaded without sending anything:
-
-```bash
-python uploadCloudinary.py --to Folder1 --dry-run
+## Dry Run
+Preview what would be uploaded:
+```
+python uploadCloudinary.py --to KontrolFreek --dry-run
 ```
 
----
-
-## Overwrite Existing Files
-
-```bash
-python uploadCloudinary.py --to Folder1 --overwrite
+Overwrite Existing Assets
+```
+python uploadCloudinary.py --to KontrolFreek --overwrite
 ```
 
----
+## Include Root Files
+By default, the script only uploads folders beside the script.
 
-## What Gets Uploaded
+To also upload media files directly in the root folder:
+```
+python uploadCloudinary.py --include-root-files
+```
 
-* All subfolders are processed recursively
-* Folder structure is preserved in Cloudinary
-* Example:
+## Use a Different Local Source Folder
+```
+python uploadCloudinary.py --source ./MyBatchFolder
+```
+What Gets Uploaded
+ - All sibling folders are scanned recursively
+ - Folder structure is preserved
+ - Images, videos, and allowed raw files are uploaded (as long as not in ignore list)
 
+The destination folder path is preserved under the chosen Cloudinary root folder
+Example:
 ```
 product5/productImages/image.jpg
-→ Folder1/product5/productImages/image.jpg
+→ KontrolFreek/product5/productImages/image
 ```
 
----
+What Is Ignored
+The script ignores these automatically:
+ - uploadCloudinary.py
+ - secrets.json
+ - requirements.txt
+ - README.md
+ - .gitignore
+ - all .py files
+ - all .json files
+ - hidden files and hidden folders by default
 
-## What Is Ignored
+## Supported File Types
 
-The script automatically ignores:
-
-* `uploadCloudinary.py`
-* `secrets.json`
-* `.py` and `.json` files
-* hidden files (e.g. `.git`, `.DS_Store`)
-
----
-
-## Notes
-
-* Only files inside folders are uploaded (not root files by default)
-* Supports images, videos, and raw files
-* Safe to reuse for multiple upload batches
-
----
-
-## Quick Example
-
-```bash
-python uploadCloudinary.py --to Folder1 --dry-run
-python uploadCloudinary.py --to Folder1 --overwrite
+Current allowlist:
+```
+.jpg
+.jpeg
+.png
+.webp
+.gif
+.mp4
+.mov
+.avi
+.mkv
+.webm
+.pdf
 ```
 
----
+If a file extension is not in the allowlist, it is skipped.
 
-## Troubleshooting
+## Usage
+Make sure your product folders are in the same directory as the script, or pass --source.
 
-* **Missing credentials**
-  → Ensure `CLOUDINARY_URL` is set correctly
+Wrong Cloudinary folder
 
-* **Nothing uploaded**
-  → Check that your folders are in the same directory as the script
+Check the folder name passed to --to. If it does not exist, the script falls back to root.
 
-* **Wrong folder destination**
-  → Verify the folder name passed with `--to`
+Hidden files not uploading
 
----
+Use:
 
-## Summary
+python uploadCloudinary.py --include-hidden
 
-* Put folders beside the script
-* Run one command
-* Upload everything with structure preserved
-
----
+secrets.json looks something like
+{
+  "cloud_name": "your_cloud_name",
+  "api_key": "your_api_key",
+  "api_secret": "your_api_secret",
+  "upload_prefix": "https://api.cloudinary.com"
+}
