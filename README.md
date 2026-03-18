@@ -68,7 +68,7 @@ python uploadCloudinary.py
 
 Upload Into a Specific Existing Cloudinary Root Folder
 ```
-python uploadCloudinary.py --to KontrolFreek
+python uploadCloudinary.py --to Folder1
 ```
 
 Behavior:
@@ -78,12 +78,12 @@ Behavior:
 ## Dry Run
 Preview what would be uploaded:
 ```
-python uploadCloudinary.py --to KontrolFreek --dry-run
+python uploadCloudinary.py --to Folder1 --dry-run
 ```
 
 Overwrite Existing Assets
 ```
-python uploadCloudinary.py --to KontrolFreek --overwrite
+python uploadCloudinary.py --to Folder1 --overwrite
 ```
 
 ## Include Root Files
@@ -107,7 +107,7 @@ The destination folder path is preserved under the chosen Cloudinary root folder
 Example:
 ```
 product5/productImages/image.jpg
-→ KontrolFreek/product5/productImages/image
+→ Folder1/product5/productImages/image
 ```
 
 What Is Ignored

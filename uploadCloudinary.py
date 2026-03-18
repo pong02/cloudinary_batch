@@ -30,7 +30,7 @@ IGNORE_EXTENSIONS = {
     ".json",
 }
 
-# Optional media allowlist. Leave empty to allow anything not ignored.
+# Allowed upload file types
 ALLOWED_EXTENSIONS = {
     ".jpg", ".jpeg", ".png", ".webp", ".gif",
     ".mp4", ".mov", ".avi", ".mkv", ".webm",
@@ -45,7 +45,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--to",
         default="",
-        help="Existing root-level Cloudinary folder. If not found, falls back to Cloudinary root.",
+        help="Existing root-level Cloudinary folder. If not found or cannot be verified, falls back to Cloudinary root.",
     )
     parser.add_argument(
         "--source",
@@ -97,52 +97,52 @@ def should_ignore(path: Path, include_hidden: bool = False) -> bool:
 
 
 def load_credentials() -> dict:
-    # Priority 1: CLOUDINARY_URL
+    """
+    Priority:
+    1. secrets.json beside this script
+    2. CLOUDINARY_URL environment variable
+    """
+    script_dir = Path(__file__).resolve().parent
+    secrets_path = script_dir / "secrets.json"
+
+    if secrets_path.exists():
+        with secrets_path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        for key in ("cloud_name", "api_key", "api_secret"):
+            if not data.get(key):
+                raise RuntimeError(f"Missing '{key}' in secrets.json")
+
+        return {
+            "cloud_name": data["cloud_name"],
+            "api_key": data["api_key"],
+            "api_secret": data["api_secret"],
+            "upload_prefix": data.get("upload_prefix", "https://api.cloudinary.com"),
+        }
+
     cloudinary_url = os.environ.get("CLOUDINARY_URL", "").strip()
     upload_prefix = os.environ.get("CLOUDINARY_UPLOAD_PREFIX", "").strip()
 
     if cloudinary_url:
         parsed = urlparse(cloudinary_url)
+
         if parsed.scheme != "cloudinary":
             raise RuntimeError("CLOUDINARY_URL must start with cloudinary://")
 
-        cloud_name = parsed.hostname
-        api_key = parsed.username
-        api_secret = parsed.password
-
-        if not cloud_name or not api_key or not api_secret:
+        if not parsed.hostname or not parsed.username or not parsed.password:
             raise RuntimeError("CLOUDINARY_URL is missing cloud_name, api_key, or api_secret")
 
         return {
-            "cloud_name": cloud_name,
-            "api_key": api_key,
-            "api_secret": api_secret,
+            "cloud_name": parsed.hostname,
+            "api_key": parsed.username,
+            "api_secret": parsed.password,
             "upload_prefix": upload_prefix or "https://api.cloudinary.com",
         }
 
-    # Priority 2: secrets.json in same directory as script
-    script_dir = Path(__file__).resolve().parent
-    secrets_path = script_dir / "secrets.json"
-
-    if not secrets_path.exists():
-        raise RuntimeError(
-            "No Cloudinary credentials found. "
-            "Set CLOUDINARY_URL or create secrets.json beside the script."
-        )
-
-    with secrets_path.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    for key in ("cloud_name", "api_key", "api_secret"):
-        if not data.get(key):
-            raise RuntimeError(f"Missing '{key}' in secrets.json")
-
-    return {
-        "cloud_name": data["cloud_name"],
-        "api_key": data["api_key"],
-        "api_secret": data["api_secret"],
-        "upload_prefix": data.get("upload_prefix", "https://api.cloudinary.com"),
-    }
+    raise RuntimeError(
+        "No Cloudinary credentials found. "
+        "Create secrets.json or set CLOUDINARY_URL."
+    )
 
 
 def configure_cloudinary(creds: dict) -> None:
@@ -158,6 +158,7 @@ def configure_cloudinary(creds: dict) -> None:
 def admin_get(path: str, creds: dict, params: Optional[dict] = None) -> requests.Response:
     base = creds["upload_prefix"].rstrip("/")
     url = f"{base}/v1_1/{creds['cloud_name']}{path}"
+
     return requests.get(
         url,
         params=params or {},
@@ -167,36 +168,68 @@ def admin_get(path: str, creds: dict, params: Optional[dict] = None) -> requests
 
 
 def get_folder_mode(creds: dict) -> str:
-    response = admin_get("/config", creds, params={"settings": "true"})
-    response.raise_for_status()
-    data = response.json()
-    return data.get("settings", {}).get("folder_mode", "dynamic")
+    """
+    Try to detect folder mode through Admin API.
+    If it fails (e.g. 401), fall back safely.
+    """
+    try:
+        response = admin_get("/config", creds, params={"settings": "true"})
+        response.raise_for_status()
+        data = response.json()
+        return data.get("settings", {}).get("folder_mode", "dynamic")
+    except Exception as exc:
+        print(f"[WARN] Could not read Cloudinary folder mode: {exc}")
+        print("[WARN] Falling back to 'dynamic' mode.")
+        return "dynamic"
 
 
 def cloudinary_root_folder_exists(folder_name: str, creds: dict) -> bool:
+    """
+    Check whether a root folder exists.
+    If verification fails, return False so the script falls back to root.
+    """
     folder_name = folder_name.strip().strip("/")
     if not folder_name:
         return False
 
-    encoded = quote(folder_name, safe="")
-    response = admin_get(f"/folders/{encoded}", creds)
+    try:
+        encoded = quote(folder_name, safe="")
+        response = admin_get(f"/folders/{encoded}", creds)
 
-    if response.status_code == 200:
-        return True
-    if response.status_code == 404:
+        if response.status_code == 200:
+            return True
+        if response.status_code == 404:
+            return False
+
+        response.raise_for_status()
         return False
-
-    response.raise_for_status()
-    return False
+    except Exception as exc:
+        print(f"[WARN] Could not verify Cloudinary folder '{folder_name}': {exc}")
+        print("[WARN] Falling back to Cloudinary root.")
+        return False
 
 
 def detect_resource_type(file_path: Path) -> str:
+    image_exts = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tif", ".tiff", ".avif"}
+    video_exts = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
+    raw_exts = {".pdf"}
+
+    ext = file_path.suffix.lower()
+
+    if ext in image_exts:
+        return "image"
+    if ext in video_exts:
+        return "video"
+    if ext in raw_exts:
+        return "raw"
+
     mime, _ = mimetypes.guess_type(str(file_path))
     if mime:
         if mime.startswith("image/"):
             return "image"
         if mime.startswith("video/"):
             return "video"
+
     return "raw"
 
 
@@ -254,7 +287,6 @@ def upload_file(
             kwargs["folder"] = destination_folder
 
     result = cloudinary.uploader.upload(str(file_path), **kwargs)
-
     print(f"[UPLOADED] {file_path} -> public_id={result.get('public_id')}")
 
 
@@ -277,7 +309,7 @@ def main() -> int:
     else:
         effective_root = ""
         if requested_root:
-            print(f"[INFO] Cloudinary folder '{requested_root}' not found. Falling back to root.")
+            print(f"[INFO] Cloudinary folder '{requested_root}' not found or could not be verified. Falling back to root.")
         else:
             print("[INFO] No Cloudinary root folder specified. Uploading to root.")
 
